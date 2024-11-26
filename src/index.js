@@ -27,7 +27,7 @@ function json(data, status = 200) {
     headers: {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     },
   });
@@ -41,7 +41,7 @@ async function handleRequest(request) {
     return new Response(null, {
       headers: {
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       },
     });
@@ -92,6 +92,12 @@ async function handleRequest(request) {
       await URL_STORE.delete(shortId);
       return json({ message: 'Deleted successfully' });
     }
+
+    if (request.method === 'PUT') {
+      const { shortId, longUrl } = await request.json();
+      await URL_STORE.put(shortId, longUrl);
+      return json({ message: 'Updated successfully' });
+    }
   }
 
   // 重定向接口
@@ -105,7 +111,8 @@ async function handleRequest(request) {
 
   // 如果请求路径是 /admin，返回管理界面
   if (url.pathname === '/admin') {
-    const adminHtml = `<!DOCTYPE html>
+    const adminHtml = `
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -178,11 +185,64 @@ async function handleRequest(request) {
                 </div>
             </div>
         </div>
+
+        <!-- 编辑对话框 -->
+        <div id="editModal" class="hidden fixed top-0 left-0 w-full h-full bg-gray-500 bg-opacity-75 flex justify-center items-center">
+            <div class="bg-white rounded-lg shadow-md p-6 w-1/2">
+                <h2 class="text-2xl font-bold mb-4">编辑短网址</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-gray-700">短网址</label>
+                        <input type="text" id="editShortId" class="w-full border rounded p-2" readonly>
+                    </div>
+                    <div>
+                        <label class="block text-gray-700">原始网址</label>
+                        <input type="text" id="editLongUrl" class="w-full border rounded p-2">
+                    </div>
+                    <button onclick="saveEdit()" class="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600">
+                        保存
+                    </button>
+                    <button onclick="closeEditModal()" class="w-full bg-red-500 text-white py-2 rounded hover:bg-red-600 mt-2">
+                        取消
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
-        let authHeader = '';
+        let authHeader = localStorage.getItem('authHeader') || '';
         const BASE_URL = 'https://u.pgit.top';
+
+        // 检查登录状态
+        async function checkLoginStatus() {
+            if (authHeader) {
+                try {
+                    const response = await fetch('https://${BASE_URL}/api/urls', {
+                        headers: { 'Authorization': authHeader }
+                    });
+
+                    if (response.ok) {
+                        document.getElementById('loginForm').classList.add('hidden');
+                        document.getElementById('adminPanel').classList.remove('hidden');
+                        loadUrls();
+                        return;
+                    } else {
+                        // 如果验证失败，清除存储的认证信息
+                        authHeader = '';
+                        localStorage.removeItem('authHeader');
+                    }
+                } catch (error) {
+                    console.error('验证登录状态失败:', error);
+                }
+            }
+            // 如果没有认证信息或验证失败，显示登录表单
+            document.getElementById('loginForm').classList.remove('hidden');
+            document.getElementById('adminPanel').classList.add('hidden');
+        }
+
+        // 页面加载完成后检查登录状态
+        document.addEventListener('DOMContentLoaded', checkLoginStatus);
 
         function keydown(event) {
             if (event.key === 'Enter') {
@@ -197,70 +257,91 @@ async function handleRequest(request) {
             authHeader = 'Basic ' + btoa(username + ':' + password);
 
             try {
-                const response = await fetch(\`\${BASE_URL}/api/urls\`, {
+                const response = await fetch('https://${BASE_URL}/api/urls', {
                     headers: { 'Authorization': authHeader }
                 });
 
                 if (response.ok) {
                     document.getElementById('loginForm').classList.add('hidden');
                     document.getElementById('adminPanel').classList.remove('hidden');
+                    // 保存认证信息到 localStorage
+                    localStorage.setItem('authHeader', authHeader);
                     loadUrls();
                 } else {
                     alert('登录失败，请检查用户名和密码');
+                    authHeader = '';
+                    localStorage.removeItem('authHeader');
                 }
             } catch (error) {
                 alert('登录失败：' + error.message);
+                authHeader = '';
+                localStorage.removeItem('authHeader');
             }
         }
 
         // 退出登录
         function logout() {
             authHeader = '';
+            localStorage.removeItem('authHeader');
             document.getElementById('loginForm').classList.remove('hidden');
             document.getElementById('adminPanel').classList.add('hidden');
             document.getElementById('username').value = '';
             document.getElementById('password').value = '';
         }
 
-        // 加载所有URL
-        async function loadUrls() {
+        // 编辑URL
+        function editUrl(shortId, longUrl) {
+            document.getElementById('editModal').classList.remove('hidden');
+            document.getElementById('editShortId').value = shortId;
+            document.getElementById('editLongUrl').value = longUrl;
+        }
+
+        // 关闭编辑对话框
+        function closeEditModal() {
+            document.getElementById('editModal').classList.add('hidden');
+        }
+
+        // 保存编辑
+        async function saveEdit() {
+            const shortId = document.getElementById('editShortId').value;
+            const longUrl = document.getElementById('editLongUrl').value;
+            
+            if (!longUrl) {
+                alert('请输入长网址');
+                return;
+            }
+
             try {
-                const response = await fetch(\`\${BASE_URL}/api/urls\`, {
-                    headers: { 'Authorization': authHeader }
+                const response = await fetch('https://${BASE_URL}/api/urls', {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': authHeader,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        shortId,
+                        longUrl
+                    })
                 });
-                const urls = await response.json();
-                
-                const tbody = document.getElementById('urlList');
-                tbody.innerHTML = '';
-                
-                urls.forEach(url => {
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = \`
-                        <td class="border px-4 py-2">
-                            <a href="\${BASE_URL}/\${url.shortId}" target="_blank" 
-                               class="text-blue-500 hover:underline">
-                                \${BASE_URL}/\${url.shortId}
-                            </a>
-                        </td>
-                        <td class="border px-4 py-2 truncate max-w-md">
-                            <a href="\${url.longUrl}" target="_blank" 
-                               class="text-gray-600 hover:underline">
-                                \${url.longUrl}
-                            </a>
-                        </td>
-                        <td class="border px-4 py-2 text-center">
-                            <button onclick="deleteUrl('\${url.shortId}')"
-                                    class="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600">
-                                删除
-                            </button>
-                        </td>
-                    \`;
-                    tbody.appendChild(tr);
-                });
+
+                if (response.ok) {
+                    closeEditModal();
+                    loadUrls();
+                } else {
+                    const error = await response.json();
+                    alert('修改失败：' + error.error);
+                }
             } catch (error) {
-                alert('加载失败：' + error.message);
+                alert('修改失败：' + error.message);
             }
         }
+
+        // 添加键盘事件处理
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeEditModal();
+            }
+        });
 
         // 添加新URL
         async function addUrl() {
@@ -273,7 +354,7 @@ async function handleRequest(request) {
             }
 
             try {
-                const response = await fetch(\`\${BASE_URL}/api/urls\`, {
+                const response = await fetch('https://${BASE_URL}/api/urls', {
                     method: 'POST',
                     headers: {
                         'Authorization': authHeader,
@@ -305,7 +386,7 @@ async function handleRequest(request) {
             }
 
             try {
-                const response = await fetch(\`\${BASE_URL}/api/urls\`, {
+                const response = await fetch('https://${BASE_URL}/api/urls', {
                     method: 'DELETE',
                     headers: {
                         'Authorization': authHeader,
@@ -323,9 +404,48 @@ async function handleRequest(request) {
                 alert('删除失败：' + error.message);
             }
         }
+
+        // 加载所有URL
+        async function loadUrls() {
+            try {
+                const response = await fetch('https://${BASE_URL}/api/urls', {
+                    headers: { 'Authorization': authHeader }
+                });
+                const urls = await response.json();
+                
+                const tbody = document.getElementById('urlList');
+                tbody.innerHTML = '';
+                
+                urls.forEach(url => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = \`<td class="border px-4 py-2"><a href="https://${BASE_URL}/\${url.shortId}" target="_blank" class="text-blue-500 hover:underline">https://${BASE_URL}/\${url.shortId}</a></td>
+                        <td class="border px-4 py-2 truncate max-w-md">
+                            <a href="\${url.longUrl}" target="_blank" 
+                               class="text-gray-600 hover:underline">
+                                \${url.longUrl}
+                            </a>
+                        </td>
+                        <td class="border px-4 py-2 text-center">
+                            <button onclick="deleteUrl('\${url.shortId}')"
+                                    class="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 mr-2">
+                                删除
+                            </button>
+                            <button onclick="editUrl('\${url.shortId}', '\${url.longUrl}')"
+                                    class="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600">
+                                编辑
+                            </button>
+                        </td>
+                    \`;
+                    tbody.appendChild(tr);
+                });
+            } catch (error) {
+                alert('加载失败：' + error.message);
+            }
+        }
     </script>
 </body>
-</html>`;
+</html>
+`;
     return new Response(adminHtml, {
       headers: { 'Content-Type': 'text/html' },
     });
