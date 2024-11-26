@@ -1,0 +1,12 @@
+name = "url-shortener"
+main = "src/index.js"
+compatibility_date = "2023-01-01"
+
+kv_namespaces = [
+  { binding = "URL_STORE", id = "your-kv-id" }
+]
+
+[vars]
+BASE_URL = "your-domain.com"
+ADMIN_USERNAME = "admin username"
+ADMIN_PASSWORD = "admin password"
