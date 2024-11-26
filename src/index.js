@@ -125,7 +125,7 @@ async function handleRequest(request) {
                 </div>
                 <div>
                     <label class="block text-gray-700">密码</label>
-                    <input type="password" id="password" class="w-full border rounded p-2">
+                    <input type="password" id="password" class="w-full border rounded p-2" onkeydown="keydown(event)">
                 </div>
                 <button onclick="login()" class="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600">
                     登录
@@ -183,6 +183,12 @@ async function handleRequest(request) {
     <script>
         let authHeader = '';
         const BASE_URL = 'https://u.pgit.top';
+
+        function keydown(event) {
+            if (event.key === 'Enter') {
+                login();
+            }
+        }
 
         // 登录函数
         async function login() {
